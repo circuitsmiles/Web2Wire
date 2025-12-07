@@ -1,28 +1,168 @@
-import os
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import threading
+import time
 import requests
+import json
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+# Import the Redis client library
+import redis 
 
-# --- Configuration ---
-# Target the Queue API, which should be running on localhost:5001
-QUEUE_API_URL = 'http://127.0.0.1:5001/api/queue' 
+# --- CONFIGURATION ---
+# Note: Update this IP address to the actual static IP of your ESP32 S3 device.
+ESP32_IP = "192.168.2.13" 
+ESP32_PORT = 80
+ESP32_JOB_START_URL = f"http://{ESP32_IP}:{ESP32_PORT}/api/job/start"
+
+# Redis Configuration
+REDIS_HOST = 'localhost'
+REDIS_PORT = 6379
+# Keys used in Redis for state persistence
+REDIS_QUEUE_KEY = 'web2wire:job_queue'
+REDIS_STATE_KEY = 'web2wire:device_state'
+
+# Status States
+STATUS_IDLE = "IDLE"
+STATUS_PROCESSING = "PROCESSING"
 MAX_QUEUE_SIZE = 10 # Reject requests if the queue is larger than this limit
 
+# --- APPLICATION STATE & PERSISTENCE (REDIS) ---
 app = Flask(__name__)
 # Enable CORS for the frontend (running on a different port/origin)
 CORS(app) 
 
+# Thread-safe lock is used for critical state updates within this process
+state_lock = threading.Lock() 
+
 # --- Rate Limiting Setup (Using Redis) ---
-# Initialize Limiter. Redis is used as the storage backend.
-# Assuming Redis is running on default port (6379) on localhost.
 limiter = Limiter(
-    app,
-    key_func=get_remote_address, # Identify users by their IP address
-    default_limits=["5 per minute", "100 per hour"], # Global limits for all endpoints
-    storage_uri="redis://localhost:6379" # Redis connection URI
+    key_func=get_remote_address, 
+    default_limits=["50 per minute", "1000 per hour"], 
+    storage_uri="redis://localhost:6379" 
 )
+limiter.init_app(app) 
+
+# Initialize Redis connection
+try:
+    r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    r.ping()
+    print(f"[INIT] Successfully connected to Redis at {REDIS_HOST}:{REDIS_PORT}.")
+    
+    # Initialize the device state if it doesn't exist
+    if not r.get(REDIS_STATE_KEY):
+        r.set(REDIS_STATE_KEY, STATUS_IDLE)
+        print(f"[INIT] Device state initialized to {STATUS_IDLE} in Redis.")
+
+except redis.exceptions.ConnectionError as e:
+    print(f"[FATAL] Could not connect to Redis: {e}")
+    print("[FATAL] Please ensure Redis server is running.")
+    r = None # Set r to None to fail subsequent Redis operations
+
+# --- REDIS HELPER FUNCTIONS ---
+
+def _get_device_state():
+    """Reads the current device state from Redis."""
+    if r:
+        # Use a fallback in case the key is missing
+        return r.get(REDIS_STATE_KEY) or STATUS_IDLE
+    return STATUS_IDLE # Fallback if Redis failed to connect
+
+def _set_device_state(state):
+    """Writes the current device state to Redis."""
+    if r:
+        r.set(REDIS_STATE_KEY, state)
+        
+def _get_queue_size():
+    """Returns the current queue length from Redis."""
+    if r:
+        return r.llen(REDIS_QUEUE_KEY)
+    return 0
+    
+def _pop_next_job():
+    """Pops the next job (FIFO) from the Redis list."""
+    if r:
+        # LPOP retrieves and removes the oldest element (FIFO)
+        job_json = r.lpop(REDIS_QUEUE_KEY)
+        if job_json:
+            return json.loads(job_json)
+    return None
+
+# --- INTERNAL JOB PROCESSING ---
+
+def _send_job_to_esp32(job_data):
+    """
+    Internal function to send the job request to the ESP32 device.
+    Runs in a separate thread.
+    """
+    
+    # 1. Read current state from Redis
+    device_state = _get_device_state()
+    
+    # Check status outside the lock first for efficiency
+    if device_state != STATUS_IDLE:
+        print(f"[PROCESSOR] Device is busy ({device_state}). Job should have been skipped.")
+        return
+
+    # 2. Update state to PROCESSING in Redis
+    with state_lock:
+        _set_device_state(STATUS_PROCESSING)
+        print(f"[PROCESSOR] State set to {STATUS_PROCESSING}. Sending job to ESP32...")
+
+    try:
+        # Step 3: Server sends the request to esp32
+        print(f"[PROCESSOR] Sending POST request to ESP32 at: {ESP32_JOB_START_URL}")
+        
+        response = requests.post(
+            ESP32_JOB_START_URL, 
+            json=job_data,
+            timeout=5 
+        )
+        
+        if response.status_code == 202:
+            print(f"[ESP32] Job successfully handed over. Status: {response.status_code}")
+        else:
+            print(f"[ERROR] ESP32 device rejected job. Status: {response.status_code}. Response: {response.text}")
+            _handle_device_failure(job_data)
+
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Communication failed with ESP32 at {ESP32_IP}: {e}")
+        _handle_device_failure(job_data)
+
+def _handle_device_failure(failed_job_data):
+    """Handles communication failure or rejection from the ESP32."""
+    with state_lock:
+        _set_device_state(STATUS_IDLE)
+        # Note: If desired, you could re-queue the job here: r.lpush(REDIS_QUEUE_KEY, json.dumps(failed_job_data))
+    print("[ERROR] Device failure handled. State reset to IDLE in Redis.")
+
+
+def _processor_loop():
+    """Continuously checks the queue and starts processing if a job is available."""
+    while True:
+        device_state = _get_device_state()
+        queue_size = _get_queue_size()
+        
+        # Only attempt to process if the device is IDLE and the queue is not empty
+        if device_state == STATUS_IDLE and queue_size > 0:
+            
+            # Safely pop the job from Redis
+            next_job = _pop_next_job()
+            
+            if next_job:
+                print(f"[QUEUE] Popped job for user: {next_job.get('name', 'N/A')}. Queue size remaining: {_get_queue_size()}")
+                
+                # Start the non-blocking process to send the job to the ESP32
+                job_thread = threading.Thread(target=_send_job_to_esp32, args=(next_job,))
+                job_thread.start()
+            
+        time.sleep(1) # Check queue every second
+
+# Start the background processor thread when the server starts
+processor_thread = threading.Thread(target=_processor_loop, daemon=True)
+processor_thread.start()
+print("[INIT] Background processor thread started.")
+
 
 # --- Health Check ---
 @app.route('/', methods=['GET'])
@@ -30,35 +170,29 @@ def health_check():
     """Simple health check endpoint."""
     return jsonify({
         "status": "Control API operational (Rate Limited)", 
-        "queue_target": QUEUE_API_URL,
+        "redis_status": "Connected" if r else "Disconnected",
         "rate_limit": "5 requests per minute per IP"
     })
 
 # --- Main Endpoint: Handle new pulse requests from the frontend ---
-# Apply a specific rate limit to this critical endpoint.
 @app.route('/api/request/new', methods=['POST'])
 @limiter.limit("5 per minute", override_defaults=False) 
 def new_request():
     """
     Receives a new pulse request from the web frontend.
     1. Validates input.
-    2. Checks the current queue size (soft limit).
-    3. Pushes the request data to the Queue API.
+    2. Checks the current queue size (soft limit) via Redis.
+    3. Pushes the request data directly to the Redis Queue.
     """
     data = request.get_json()
     name = data.get('name')
     country = data.get('country')
 
-    # Input Validation
     if not name or not country:
-        # Note: Flask-Limiter will handle HTTP 429 errors first if the rate limit is hit.
         return jsonify({"message": "Missing 'name' or 'country' field in request payload."}), 400
 
     try:
-        # 1. Check Queue Status for Soft Limiting (Queue Depth Check)
-        status_response = requests.get(f"{QUEUE_API_URL}/status")
-        status_response.raise_for_status() 
-        current_queue_size = status_response.json().get('queue_size', 0)
+        current_queue_size = _get_queue_size()
 
         if current_queue_size >= MAX_QUEUE_SIZE:
             # Soft Limit Exceeded (Queue Full)
@@ -67,9 +201,17 @@ def new_request():
                 "queue_size": current_queue_size
             }), 429 
 
-        # 2. Push valid request to the Queue API
-        add_response = requests.post(f"{QUEUE_API_URL}/add", json=data)
-        add_response.raise_for_status()
+        # Construct job data
+        job_data = {
+            'timestamp': time.time(),
+            'name': name,
+            'country': country
+        }
+        
+        # 2. Push valid request to the Redis Queue (RPUSH adds to the right/end for FIFO)
+        job_json = json.dumps(job_data)
+        if r:
+            r.rpush(REDIS_QUEUE_KEY, job_json)
 
         # The new size is the client's position in the queue
         new_queue_size = current_queue_size + 1 
@@ -79,14 +221,35 @@ def new_request():
             "queue_size": new_queue_size
         }), 200
 
-    except requests.exceptions.ConnectionError:
-        return jsonify({"message": "Error: Cannot connect to Queue API at 127.0.0.1:5001."}), 503
-    except requests.exceptions.RequestException as e:
-        return jsonify({"message": f"An error occurred during queue interaction: {e}"}), 500
     except Exception as e:
+        print(f"[ERROR] An unexpected server error occurred during request processing: {e}")
         return jsonify({"message": f"An unexpected server error occurred: {e}"}), 500
+
+# --- ESP32 CALLBACK ENDPOINT ---
+@app.route('/api/job/complete', methods=['POST'])
+def job_complete():
+    """
+    [STEP 4] Endpoint called by the ESP32 after it has finished the action.
+    """
+    data = request.json
+    
+    if data and data.get('status') == 'completed':
+        print("[API] Job completion signal received from ESP32. Resetting state.")
+        
+        # Safely reset device state to IDLE in Redis
+        with state_lock:
+            _set_device_state(STATUS_IDLE)
+        
+        # The processor thread will automatically check for the next job.
+        return jsonify({
+            "message": "Device state reset. Queue processing continues.",
+            "queue_size": _get_queue_size(),
+            "device_state": _get_device_state()
+        }), 200
+    
+    return jsonify({"message": "Invalid completion status received."}), 400
 
 
 if __name__ == '__main__':
-    # Running on port 5000 as configured in the frontend (API_BASE_URL)
-    app.run(port=5000)
+    # Running on port 5000 
+    app.run(host='0.0.0.0', port=5000)
