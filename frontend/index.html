@@ -110,7 +110,9 @@
         <!-- Status Bar -->
         <div class="mb-6 p-3 rounded-md border-b-2 border-dashed border-green-500/50">
             <span class="uppercase text-xs tracking-widest text-gray-300">System Status:</span>
-            <div class="flex justify-between items-center mt-1">
+            
+            <!-- Queue Size Row -->
+            <div class="flex justify-between items-center mt-1 mb-2">
                 <span class="text-lg neon-text">Queue Size:</span>
                 <span class="flex items-center">
                     <span id="queue-status" class="text-xl font-mono neon-text animate-pulse">Awaiting Signal...</span>
@@ -120,6 +122,13 @@
                     </button>
                 </span>
             </div>
+
+            <!-- NEW: Estimated Wait Time Row for Ticking -->
+            <div class="flex justify-between items-center text-sm border-t border-dashed border-green-500/20 pt-2">
+                <span class="text-sm text-gray-400">Est. Wait Time:</span>
+                <span id="wait-time-display" class="font-mono text-yellow-400">Loading...</span>
+            </div>
+
         </div>
 
         <!-- Control Form -->
@@ -163,8 +172,8 @@
 
     <script>
         // --- CONFIGURATION ---
-        const API_BASE_URL = 'http://api.myproject.local:5000'; // Target the Control API
-        const QUEUE_STATUS_URL = 'http://api.myproject.local:5001/api/queue/status'; // Target the Queue API
+        const API_BASE_URL = 'http://localhost:5000'; // Target the Control API
+        const QUEUE_STATUS_URL = 'http://localhost:5001/api/queue/status'; // Target the Queue API
         const TIME_PER_REQUEST_SEC = 5; // Assumption: each item takes 5 seconds to process
 
         // --- DOM Elements ---
@@ -173,10 +182,16 @@
         const messageDiv = document.getElementById('message');
         const queueStatusSpan = document.getElementById('queue-status');
         const refreshBtn = document.getElementById('refresh-btn');
+        const waitTimeDisplay = document.getElementById('wait-time-display'); // New element
         const neonGreenColor = 'var(--neon-green)';
+        
+        // --- GLOBAL STATE for Ticking Timer ---
+        let countdownInterval = null;
+        let secondsRemaining = 0; // Tracks the current countdown
 
         // --- UTILITY: Format wait time in seconds to minutes and seconds ---
         function formatWaitTime(seconds) {
+            seconds = Math.max(0, seconds); // Ensure time is not negative
             if (seconds <= 0) return "Less than 5 seconds";
             const minutes = Math.floor(seconds / 60);
             const remainingSeconds = seconds % 60;
@@ -216,6 +231,42 @@
             messageDiv.style.color = textColor;
             messageDiv.innerHTML = `${icon} <span class="text-xs">${new Date().toLocaleTimeString()}</span>\n${text}`;
         }
+        
+        // --- COUNTDOWN LOGIC ---
+        function startWaitTimeCountdown(initialQueueSize) {
+            // Stop any existing timer
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+
+            // Calculate initial total seconds to wait
+            secondsRemaining = initialQueueSize * TIME_PER_REQUEST_SEC;
+
+            if (secondsRemaining <= 0) {
+                waitTimeDisplay.textContent = "Immediate access available";
+                return;
+            }
+
+            // Initial display update
+            const initialFormattedTime = formatWaitTime(secondsRemaining);
+            waitTimeDisplay.textContent = `${initialFormattedTime} (${TIME_PER_REQUEST_SEC}s/req)`;
+
+            // Start the 1-second countdown
+            countdownInterval = setInterval(() => {
+                secondsRemaining = Math.max(0, secondsRemaining - 1);
+                
+                const currentFormattedWaitTime = formatWaitTime(secondsRemaining);
+                waitTimeDisplay.textContent = `${currentFormattedWaitTime} (${TIME_PER_REQUEST_SEC}s/req)`;
+                
+                if (secondsRemaining <= 0) {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                    waitTimeDisplay.textContent = "Processing now...";
+                    // Wait a moment and fetch the new status to reset the size
+                    setTimeout(() => fetchQueueStatus(false), 2000); 
+                }
+            }, 1000); // Ticks every 1000 milliseconds (1 second)
+        }
 
         // --- 1. HANDLE FORM SUBMISSION ---
         form.addEventListener('submit', async (e) => {
@@ -243,6 +294,9 @@
                     const queuePosition = result.queue_size; 
                     const waitTimeSeconds = queuePosition * TIME_PER_REQUEST_SEC;
                     const formattedWaitTime = formatWaitTime(waitTimeSeconds);
+                    
+                    // Start the countdown immediately with the new size
+                    startWaitTimeCountdown(queuePosition);
 
                     logMessage(`PULSE ACCEPTED: ${result.message}
 > YOUR POSITION: ${queuePosition} in queue
@@ -276,18 +330,36 @@
                 const response = await fetch(QUEUE_STATUS_URL);
                 if (response.ok) {
                     const result = await response.json();
-                    queueStatusSpan.textContent = result.queue_size;
+                    
+                    const queuePosition = result.queue_size;
+                    
+                    // Update the countdown whenever the queue status is successfully fetched
+                    startWaitTimeCountdown(queuePosition);
+
+                    // Update Queue Size Span
+                    queueStatusSpan.textContent = queuePosition;
                     queueStatusSpan.classList.remove('text-red-500', 'text-yellow-500');
                     queueStatusSpan.classList.add('neon-text');
+                    
+                    // Log success for manual refresh with wait time
+                    if (log) { 
+                        const formattedWaitTime = formatWaitTime(queuePosition * TIME_PER_REQUEST_SEC);
+                        logMessage(`Queue status updated successfully.
+> Current size: ${queuePosition} in queue
+> Est. Wait Time: ${formattedWaitTime} (${TIME_PER_REQUEST_SEC}s/request)`, 'info');
+                    }
+
                 } else {
                     queueStatusSpan.textContent = 'ERROR (501)';
                     queueStatusSpan.classList.remove('neon-text');
                     queueStatusSpan.classList.add('text-red-500');
+                    waitTimeDisplay.textContent = 'Queue API Error';
                 }
             } catch (error) {
                 queueStatusSpan.textContent = 'OFFLINE';
                 queueStatusSpan.classList.remove('neon-text');
                 queueStatusSpan.classList.add('text-yellow-500');
+                waitTimeDisplay.textContent = 'Offline';
             } finally {
                 refreshBtn.disabled = false;
             }

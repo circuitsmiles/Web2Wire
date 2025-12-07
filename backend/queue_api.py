@@ -1,74 +1,77 @@
-import os
-import time
-from flask import Flask, request, jsonify
+import json
+from flask import Flask, jsonify
 from flask_cors import CORS
-from collections import deque
+import redis
 
-# --- Configuration ---
+# --- CONFIGURATION ---
+# Redis Configuration (Must match Control API)
+REDIS_HOST = 'localhost'
+REDIS_PORT = 6379
+# Keys used in Redis (Must match control_api.py)
+REDIS_QUEUE_KEY = 'web2wire:job_queue'
+REDIS_STATE_KEY = 'web2wire:device_state'
+# Status States (for fallback)
+STATUS_OFFLINE = "OFFLINE"
+
+# --- APPLICATION SETUP ---
 app = Flask(__name__)
-# Enable CORS for the frontend (running on a different port/origin)
+# Enable CORS for the frontend
 CORS(app) 
 
-# Use a thread-safe deque for the FIFO job queue
-job_queue = deque()
+# Initialize Redis connection
+r = None
+try:
+    r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    r.ping()
+    print(f"[INIT] Successfully connected to Redis at {REDIS_HOST}:{REDIS_PORT}.")
+except redis.exceptions.ConnectionError as e:
+    print(f"[FATAL] Could not connect to Redis: {e}")
+    print("[FATAL] Please ensure Redis server is running. Status will report OFFLINE.")
+    # r remains None
+
+def _get_status_from_redis():
+    """Reads the queue size and device state directly from Redis."""
+    if not r:
+        # Fallback if Redis failed to initialize
+        return 0, STATUS_OFFLINE
+        
+    try:
+        # Get queue length
+        queue_size = r.llen(REDIS_QUEUE_KEY)
+        # Get device state, defaulting if key is missing
+        device_state = r.get(REDIS_STATE_KEY) or STATUS_OFFLINE
+        return queue_size, device_state
+    except Exception as e:
+        print(f"[ERROR] Error reading from Redis: {e}")
+        return 0, STATUS_OFFLINE
+
+
+# --- QUEUE API ENDPOINTS (Port 5001) ---
+
+@app.route('/api/queue/status', methods=['GET'])
+def queue_status():
+    """
+    Endpoint called by the UI for real-time status updates, reading state from Redis.
+    This provides the separation of concerns required for the Queue API.
+    """
+    queue_size, device_state = _get_status_from_redis()
+    
+    return jsonify({
+        "queue_size": queue_size,
+        "device_state": device_state
+    }), 200
 
 # --- Health Check ---
 @app.route('/', methods=['GET'])
 def health_check():
     """Simple health check endpoint."""
-    return jsonify({"status": "Queue API operational", "queue_size": len(job_queue)})
-
-# --- Endpoint 1: Get Current Queue Status (for Frontend) ---
-@app.route('/api/queue/status', methods=['GET'])
-def get_status():
-    """Returns the current number of items in the queue."""
-    return jsonify({"queue_size": len(job_queue)}), 200
-
-# --- Endpoint 2: Add Item to Queue (for Control API) ---
-@app.route('/api/queue/add', methods=['POST'])
-def add_job():
-    """Adds a new job payload (from the Control API) to the end of the queue."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"message": "Invalid job payload."}), 400
-
-    # Add timestamp and current size to the job data for logging/tracking
-    job_payload = {
-        "timestamp": time.time(),
-        "id": len(job_queue) + 1,
-        "name": data.get('name'),
-        "country": data.get('country')
-    }
-    
-    job_queue.append(job_payload)
-    print(f"Job added: {job_payload['name']} from {job_payload['country']}. New size: {len(job_queue)}")
-    
-    return jsonify({"message": "Job added successfully."}), 200
-
-# --- Endpoint 3: Get Next Job (for ESP32 device) ---
-@app.route('/api/queue/next', methods=['GET'])
-def get_next_job():
-    """
-    Pops the oldest job from the queue and returns it to the physical device.
-    This is the endpoint the ESP32 will constantly poll.
-    """
-    if job_queue:
-        next_job = job_queue.popleft()
-        print(f"Job delivered: {next_job['name']} from {next_job['country']}. Remaining: {len(job_queue)}")
-        
-        # We only send back the critical data the ESP32 needs
-        return jsonify({
-            "status": "success",
-            "job": {
-                "name": next_job['name'],
-                "country": next_job['country']
-            }
-        }), 200
-    else:
-        # If the queue is empty, inform the device
-        return jsonify({"status": "empty", "message": "Queue is empty. No jobs available."}), 204
+    return jsonify({
+        "status": "Queue API operational", 
+        "redis_status": "Connected" if r else "Disconnected",
+        "provides": "/api/queue/status"
+    })
 
 
 if __name__ == '__main__':
-    # Running on port 5001 as configured in the Control API and the frontend (QUEUE_STATUS_URL)
-    app.run(port=5001)
+    # Runs on port 5001 
+    app.run(host='0.0.0.0', port=5001)

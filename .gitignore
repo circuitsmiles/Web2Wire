@@ -236,3 +236,5 @@ appendonly.aof
 *.map
 # Dependencies (if using PlatformIO or another library manager)
 lib/
+firmware/include/README
+firmware/test/README
