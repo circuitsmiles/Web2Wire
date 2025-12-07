@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web2Wire: Global Light Control</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Custom Neon Green Color and Glow */
+        :root {
+            --neon-green: #39FF14;
+            --dark-bg: #0d0d0d;
+        }
+
+        body {
+            background-color: var(--dark-bg);
+            color: var(--neon-green);
+            font-family: 'Space Mono', monospace;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* Create the radar/crosshair background effect */
+            background-image: 
+                radial-gradient(circle at center, transparent 0, transparent 50%, rgba(57, 255, 20, 0.1) 60%, transparent 100%),
+                linear-gradient(to right, rgba(57, 255, 20, 0.1) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(57, 255, 20, 0.1) 1px, transparent 1px);
+            background-size: 100% 100%, 50px 50px, 50px 50px;
+            background-position: center center;
+        }
+
+        .neon-text {
+            text-shadow: 0 0 5px var(--neon-green), 0 0 10px var(--neon-green);
+        }
+
+        .neon-box {
+            box-shadow: 0 0 15px rgba(57, 255, 20, 0.8), 0 0 5px rgba(57, 255, 20, 0.5);
+            border: 1px solid var(--neon-green);
+        }
+
+        .neon-input {
+            background-color: #1a1a1a;
+            border: 1px solid var(--neon-green);
+            color: var(--neon-green);
+            box-shadow: inset 0 0 5px rgba(57, 255, 20, 0.5);
+        }
+
+        .neon-btn {
+            background-color: var(--neon-green);
+            color: #000;
+            font-weight: bold;
+            text-shadow: none;
+            transition: all 0.2s;
+        }
+
+        .neon-btn:hover:not(:disabled) {
+            box-shadow: 0 0 10px var(--neon-green), 0 0 20px var(--neon-green);
+            background-color: #66ff33;
+        }
+        
+        .neon-btn:disabled {
+            background-color: #333;
+            color: #888;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        
+        /* Style for the dropdown arrow to match the theme */
+        select.neon-input {
+            appearance: none; /* Removes default dropdown arrow */
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill='%2339FF14' d='M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.7em top 50%;
+            background-size: 1.5em;
+            padding-right: 2.5em; /* Make space for the custom arrow */
+        }
+
+        /* Specific style for the small refresh button */
+        #refresh-btn {
+            background-color: #1a1a1a;
+            color: var(--neon-green);
+            border: 1px solid var(--neon-green);
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            line-height: 1;
+            margin-left: 10px;
+            transition: background-color 0.2s;
+        }
+
+        #refresh-btn:hover:not(:disabled) {
+            background-color: rgba(57, 255, 20, 0.2);
+        }
+    </style>
+</head>
+<body class="p-4">
+
+    <div id="app-container" class="max-w-xl w-full p-6 rounded-lg neon-box bg-gray-900/90 backdrop-blur-sm">
+        
+        <!-- Header -->
+        <h1 class="text-3xl font-bold mb-2 neon-text text-center">
+            <span class="inline-block animate-pulse">⚡</span> Web2Wire: Global Light Control
+        </h1>
+        <p class="text-center text-sm mb-6 text-gray-400">
+            Securely bridge the web to the physical wire. Send a pulse!
+        </p>
+
+        <!-- Status Bar -->
+        <div class="mb-6 p-3 rounded-md border-b-2 border-dashed border-green-500/50">
+            <span class="uppercase text-xs tracking-widest text-gray-300">System Status:</span>
+            <div class="flex justify-between items-center mt-1">
+                <span class="text-lg neon-text">Queue Size:</span>
+                <span class="flex items-center">
+                    <span id="queue-status" class="text-xl font-mono neon-text animate-pulse">Awaiting Signal...</span>
+                    <!-- New Refresh Button -->
+                    <button id="refresh-btn" type="button" class="rounded neon-box ml-4">
+                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m9.67 6.588l-1.415-1.415a2 2 0 112.828-2.828l1.415 1.415M20 20v-5h-.582"></path></svg>
+                    </button>
+                </span>
+            </div>
+        </div>
+
+        <!-- Control Form -->
+        <form id="control-form" class="space-y-4">
+            <div>
+                <label for="user-name" class="block text-sm font-medium mb-1 neon-text">USER ID (Name):</label>
+                <input type="text" id="user-name" required placeholder="Enter your callsign (max 20 chars)" maxlength="20"
+                       class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
+            </div>
+
+            <div>
+                <label for="user-country" class="block text-sm font-medium mb-1 neon-text">ORIGIN (Country):</label>
+                <!-- Country Dropdown -->
+                <select id="user-country" required 
+                       class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <option value="" disabled selected>Select your source nation</option>
+                    <option value="United States">United States</option>
+                    <option value="Canada">Canada</option>
+                    <option value="United Kingdom">United Kingdom</option>
+                    <option value="Germany">Germany</option>
+                    <option value="Japan">Japan</option>
+                    <option value="Australia">Australia</option>
+                    <option value="India">India</option>
+                    <option value="Brazil">Brazil</option>
+                    <option value="South Africa">South Africa</option>
+                    <option value="Mexico">Mexico</option>
+                    <option value="Other">Other / Unknown</option>
+                </select>
+            </div>
+
+            <button type="submit" id="submit-btn" class="w-full p-3 rounded neon-btn mt-4 shadow-lg shadow-green-500/30">
+                INITIATE PULSE SEQUENCE <span class="ml-2">→</span>
+            </button>
+        </form>
+
+        <!-- Message/Response Display -->
+        <div id="message" class="mt-6 p-4 rounded-md font-mono text-left whitespace-pre-wrap">
+            <span class="text-sm">STATUS_LOG: Waiting for user input...</span>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const API_BASE_URL = 'http://api.myproject.local:5000'; // Target the Control API
+        const QUEUE_STATUS_URL = 'http://api.myproject.local:5001/api/queue/status'; // Target the Queue API
+        const TIME_PER_REQUEST_SEC = 5; // Assumption: each item takes 5 seconds to process
+
+        // --- DOM Elements ---
+        const form = document.getElementById('control-form');
+        const submitBtn = document.getElementById('submit-btn');
+        const messageDiv = document.getElementById('message');
+        const queueStatusSpan = document.getElementById('queue-status');
+        const refreshBtn = document.getElementById('refresh-btn');
+        const neonGreenColor = 'var(--neon-green)';
+
+        // --- UTILITY: Format wait time in seconds to minutes and seconds ---
+        function formatWaitTime(seconds) {
+            if (seconds <= 0) return "Less than 5 seconds";
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            
+            let parts = [];
+            if (minutes > 0) parts.push(`${minutes} min`);
+            if (remainingSeconds > 0) parts.push(`${remainingSeconds} sec`);
+            
+            return parts.join(' ');
+        }
+
+        // --- UTILITY: Update Message Box ---
+        function logMessage(text, type = 'info') {
+            let bgColor = 'bg-gray-800';
+            let textColor = neonGreenColor;
+            let icon = '>';
+
+            if (type === 'success') {
+                bgColor = 'bg-green-900/30';
+                textColor = neonGreenColor;
+                icon = '✅';
+            } else if (type === 'error') {
+                bgColor = 'bg-red-900/30';
+                textColor = '#FF6347'; 
+                icon = '❌';
+            } else if (type === 'limit') {
+                bgColor = 'bg-yellow-900/30';
+                textColor = '#FFFF00'; 
+                icon = '⚠️';
+            } else if (type === 'refresh') {
+                bgColor = 'bg-blue-900/30';
+                textColor = '#00BFFF';
+                icon = '🔄';
+            }
+
+            messageDiv.style.backgroundColor = bgColor;
+            messageDiv.style.color = textColor;
+            messageDiv.innerHTML = `${icon} <span class="text-xs">${new Date().toLocaleTimeString()}</span>\n${text}`;
+        }
+
+        // --- 1. HANDLE FORM SUBMISSION ---
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('user-name').value;
+            const country = document.getElementById('user-country').value;
+
+            submitBtn.disabled = true;
+            logMessage('ATTEMPTING HANDSHAKE... Validating payload.', 'info');
+
+            const payload = { name, country };
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/request/new`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // API returns the NEW queue size, which is the user's position (1-indexed)
+                    const queuePosition = result.queue_size; 
+                    const waitTimeSeconds = queuePosition * TIME_PER_REQUEST_SEC;
+                    const formattedWaitTime = formatWaitTime(waitTimeSeconds);
+
+                    logMessage(`PULSE ACCEPTED: ${result.message}
+> YOUR POSITION: ${queuePosition} in queue
+> EST. WAIT TIME: ${formattedWaitTime} (${TIME_PER_REQUEST_SEC}s/request)`, 'success');
+
+                } else if (response.status === 429) {
+                    logMessage(`[ERROR 429] RATE LIMIT EXCEEDED. Access restricted.\n> ${result.message}`, 'limit');
+                } else {
+                    logMessage(`[ERROR ${response.status}] FAILED: ${result.message}`, 'error');
+                }
+
+            } catch (error) {
+                logMessage(`[ERROR NET] CRITICAL FAILURE: Could not establish connection to Control API.`, 'error');
+                console.error("Network Error:", error);
+            } finally {
+                submitBtn.disabled = false;
+                fetchQueueStatus(false); // Update status after submission, don't log a refresh message
+            }
+        });
+
+        // --- 2. FETCH QUEUE STATUS ---
+        async function fetchQueueStatus(log = true) {
+            
+            if (log) {
+                 logMessage('MANUAL REFRESH: Fetching updated queue status.', 'refresh');
+            }
+            
+            refreshBtn.disabled = true;
+            
+            try {
+                const response = await fetch(QUEUE_STATUS_URL);
+                if (response.ok) {
+                    const result = await response.json();
+                    queueStatusSpan.textContent = result.queue_size;
+                    queueStatusSpan.classList.remove('text-red-500', 'text-yellow-500');
+                    queueStatusSpan.classList.add('neon-text');
+                } else {
+                    queueStatusSpan.textContent = 'ERROR (501)';
+                    queueStatusSpan.classList.remove('neon-text');
+                    queueStatusSpan.classList.add('text-red-500');
+                }
+            } catch (error) {
+                queueStatusSpan.textContent = 'OFFLINE';
+                queueStatusSpan.classList.remove('neon-text');
+                queueStatusSpan.classList.add('text-yellow-500');
+            } finally {
+                refreshBtn.disabled = false;
+            }
+        }
+        
+        // --- 3. MANUAL REFRESH BUTTON EVENT ---
+        refreshBtn.addEventListener('click', () => fetchQueueStatus(true));
+
+
+        // --- 4. INITIALIZE & POLLING ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initial fetch on load (don't log it as a 'refresh')
+            fetchQueueStatus(false); 
+            
+            // Poll the queue status every 5 seconds (5000ms)
+            setInterval(() => fetchQueueStatus(false), 5000); 
+            
+            logMessage('SYSTEM BOOT: Waiting for user command.', 'info');
+        });
+    </script>
+</body>
+</html>
