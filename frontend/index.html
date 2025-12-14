@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Web2Wire: Global Light Control</title>
-    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     
@@ -99,7 +98,6 @@
 
     <div id="app-container" class="max-w-xl w-full p-6 rounded-lg neon-box bg-gray-900/90 backdrop-blur-sm">
         
-        <!-- Header -->
         <h1 class="text-3xl font-bold mb-2 neon-text text-center">
             <span class="inline-block animate-pulse">⚡</span> Web2Wire: Global Light Control
         </h1>
@@ -107,23 +105,19 @@
             Securely bridge the web to the physical wire. Send a pulse!
         </p>
 
-        <!-- Status Bar -->
         <div class="mb-6 p-3 rounded-md border-b-2 border-dashed border-green-500/50">
             <span class="uppercase text-xs tracking-widest text-gray-300">System Status:</span>
             
-            <!-- Queue Size Row -->
             <div class="flex justify-between items-center mt-1 mb-2">
                 <span class="text-lg neon-text">Queue Size:</span>
                 <span class="flex items-center">
                     <span id="queue-status" class="text-xl font-mono neon-text animate-pulse">Awaiting Signal...</span>
-                    <!-- New Refresh Button -->
                     <button id="refresh-btn" type="button" class="rounded neon-box ml-4">
                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m9.67 6.588l-1.415-1.415a2 2 0 112.828-2.828l1.415 1.415M20 20v-5h-.582"></path></svg>
                     </button>
                 </span>
             </div>
 
-            <!-- NEW: Estimated Wait Time Row for Ticking -->
             <div class="flex justify-between items-center text-sm border-t border-dashed border-green-500/20 pt-2">
                 <span class="text-sm text-gray-400">Est. Wait Time:</span>
                 <span id="wait-time-display" class="font-mono text-yellow-400">Loading...</span>
@@ -131,30 +125,53 @@
 
         </div>
 
-        <!-- Control Form -->
         <form id="control-form" class="space-y-4">
             <div>
                 <label for="user-name" class="block text-sm font-medium mb-1 neon-text">USER ID (Name):</label>
                 <input type="text" id="user-name" required placeholder="Enter your callsign (max 20 chars)" maxlength="20"
-                        class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
+                       class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
             </div>
 
             <div>
                 <label for="user-country" class="block text-sm font-medium mb-1 neon-text">ORIGIN (Country):</label>
-                <!-- Country Dropdown -->
                 <select id="user-country" required 
                         class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
                     <option value="" disabled selected>Select your source nation</option>
-                    <option value="United States">United States</option>
-                    <option value="Canada">Canada</option>
-                    <option value="United Kingdom">United Kingdom</option>
-                    <option value="Germany">Germany</option>
-                    <option value="Japan">Japan</option>
+                    <option value="Argentina">Argentina</option>
                     <option value="Australia">Australia</option>
-                    <option value="India">India</option>
+                    <option value="Austria">Austria</option>
+                    <option value="Belgium">Belgium</option>
                     <option value="Brazil">Brazil</option>
-                    <option value="South Africa">South Africa</option>
+                    <option value="Canada">Canada</option>
+                    <option value="Chile">Chile</option>
+                    <option value="China">China</option>
+                    <option value="Colombia">Colombia</option>
+                    <option value="Denmark">Denmark</option>
+                    <option value="Egypt">Egypt</option>
+                    <option value="Finland">Finland</option>
+                    <option value="France">France</option>
+                    <option value="Germany">Germany</option>
+                    <option value="Greece">Greece</option>
+                    <option value="India">India</option>
+                    <option value="Indonesia">Indonesia</option>
+                    <option value="Ireland">Ireland</option>
+                    <option value="Italy">Italy</option>
+                    <option value="Japan">Japan</option>
+                    <option value="Kenya">Kenya</option>
                     <option value="Mexico">Mexico</option>
+                    <option value="Netherlands">Netherlands</option>
+                    <option value="New Zealand">New Zealand</option>
+                    <option value="Norway">Norway</option>
+                    <option value="Poland">Poland</option>
+                    <option value="Portugal">Portugal</option>
+                    <option value="South Africa">South Africa</option>
+                    <option value="South Korea">South Korea</option>
+                    <option value="Spain">Spain</option>
+                    <option value="Sweden">Sweden</option>
+                    <option value="Switzerland">Switzerland</option>
+                    <option value="Turkey">Turkey</option>
+                    <option value="United Kingdom">United Kingdom</option>
+                    <option value="United States">United States</option>
                     <option value="Other">Other / Unknown</option>
                 </select>
             </div>
@@ -164,7 +181,6 @@
             </button>
         </form>
 
-        <!-- Message/Response Display -->
         <div id="message" class="mt-6 p-4 rounded-md font-mono text-left whitespace-pre-wrap">
             <span class="text-sm">STATUS_LOG: Waiting for user input...</span>
         </div>
@@ -192,17 +208,42 @@
         // --- COUNTRY CODE MAPPING ---
         // Maps the full country name (the value in the <option>) to the 2-letter code (the 'flag' field)
         const COUNTRY_CODES = {
-            "United States": "US",
-            "Canada": "CA",
-            "United Kingdom": "GB", // ISO 3166-1 alpha-2 for United Kingdom
-            "Germany": "DE",
-            "Japan": "JP",
+            "Argentina": "AR",
             "Australia": "AU",
-            "India": "IN",
+            "Austria": "AT",
+            "Belgium": "BE",
             "Brazil": "BR",
-            "South Africa": "ZA",
+            "Canada": "CA",
+            "Chile": "CL",
+            "China": "CN",
+            "Colombia": "CO",
+            "Denmark": "DK",
+            "Egypt": "EG",
+            "Finland": "FI",
+            "France": "FR",
+            "Germany": "DE",
+            "Greece": "GR",
+            "India": "IN",
+            "Indonesia": "ID",
+            "Ireland": "IE",
+            "Italy": "IT",
+            "Japan": "JP",
+            "Kenya": "KE",
             "Mexico": "MX",
-            "Other": "ZZ" // Placeholder for unknown/other
+            "Netherlands": "NL",
+            "New Zealand": "NZ",
+            "Norway": "NO",
+            "Poland": "PL",
+            "Portugal": "PT",
+            "South Africa": "ZA",
+            "South Korea": "KR",
+            "Spain": "ES",
+            "Sweden": "SE",
+            "Switzerland": "CH",
+            "Turkey": "TR",
+            "United Kingdom": "GB",
+            "United States": "US",
+            "Other": "ZZ"
         };
 
 
