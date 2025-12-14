@@ -113,6 +113,7 @@ def _send_job_to_esp32(job_data):
         # Step 3: Server sends the request to esp32
         print(f"[PROCESSOR] Sending POST request to ESP32 at: {ESP32_JOB_START_URL}")
         
+        # job_data now includes 'flag' field
         response = requests.post(
             ESP32_JOB_START_URL, 
             json=job_data,
@@ -150,7 +151,7 @@ def _processor_loop():
             next_job = _pop_next_job()
             
             if next_job:
-                print(f"[QUEUE] Popped job for user: {next_job.get('name', 'N/A')}. Queue size remaining: {_get_queue_size()}")
+                print(f"[QUEUE] Popped job for user: {next_job.get('name', 'N/A')}. Country: {next_job.get('country', 'N/A')}. Flag: {next_job.get('flag', 'N/A')}. Queue size remaining: {_get_queue_size()}")
                 
                 # Start the non-blocking process to send the job to the ESP32
                 job_thread = threading.Thread(target=_send_job_to_esp32, args=(next_job,))
@@ -180,16 +181,19 @@ def health_check():
 def new_request():
     """
     Receives a new pulse request from the web frontend.
-    1. Validates input.
+    1. Validates input (name, country, flag).
     2. Checks the current queue size (soft limit) via Redis.
     3. Pushes the request data directly to the Redis Queue.
     """
     data = request.get_json()
     name = data.get('name')
     country = data.get('country')
+    # --- NEW: Extract the 'flag' field (2-letter country code) ---
+    flag = data.get('flag') 
 
-    if not name or not country:
-        return jsonify({"message": "Missing 'name' or 'country' field in request payload."}), 400
+    # --- UPDATED VALIDATION ---
+    if not name or not country or not flag:
+        return jsonify({"message": "Missing 'name', 'country', or 'flag' field (required 2-letter code) in request payload."}), 400
 
     try:
         current_queue_size = _get_queue_size()
@@ -205,7 +209,8 @@ def new_request():
         job_data = {
             'timestamp': time.time(),
             'name': name,
-            'country': country
+            'country': country,
+            'flag': flag # --- NEW: Include flag in the job data ---
         }
         
         # 2. Push valid request to the Redis Queue (RPUSH adds to the right/end for FIFO)
@@ -217,7 +222,7 @@ def new_request():
         new_queue_size = current_queue_size + 1 
         
         return jsonify({
-            "message": f"Pulse request accepted for {name} from {country}.",
+            "message": f"Pulse request accepted for {name} from {country} ({flag}).",
             "queue_size": new_queue_size
         }), 200
 

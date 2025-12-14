@@ -136,14 +136,14 @@
             <div>
                 <label for="user-name" class="block text-sm font-medium mb-1 neon-text">USER ID (Name):</label>
                 <input type="text" id="user-name" required placeholder="Enter your callsign (max 20 chars)" maxlength="20"
-                       class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
+                        class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
             </div>
 
             <div>
                 <label for="user-country" class="block text-sm font-medium mb-1 neon-text">ORIGIN (Country):</label>
                 <!-- Country Dropdown -->
                 <select id="user-country" required 
-                       class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
+                        class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
                     <option value="" disabled selected>Select your source nation</option>
                     <option value="United States">United States</option>
                     <option value="Canada">Canada</option>
@@ -184,10 +184,27 @@
         const refreshBtn = document.getElementById('refresh-btn');
         const waitTimeDisplay = document.getElementById('wait-time-display'); // New element
         const neonGreenColor = 'var(--neon-green)';
-        
+
         // --- GLOBAL STATE for Ticking Timer ---
         let countdownInterval = null;
         let secondsRemaining = 0; // Tracks the current countdown
+        
+        // --- COUNTRY CODE MAPPING ---
+        // Maps the full country name (the value in the <option>) to the 2-letter code (the 'flag' field)
+        const COUNTRY_CODES = {
+            "United States": "US",
+            "Canada": "CA",
+            "United Kingdom": "GB", // ISO 3166-1 alpha-2 for United Kingdom
+            "Germany": "DE",
+            "Japan": "JP",
+            "Australia": "AU",
+            "India": "IN",
+            "Brazil": "BR",
+            "South Africa": "ZA",
+            "Mexico": "MX",
+            "Other": "ZZ" // Placeholder for unknown/other
+        };
+
 
         // --- UTILITY: Format wait time in seconds to minutes and seconds ---
         function formatWaitTime(seconds) {
@@ -273,12 +290,20 @@
             e.preventDefault();
             
             const name = document.getElementById('user-name').value;
-            const country = document.getElementById('user-country').value;
+            const countryName = document.getElementById('user-country').value; // e.g., "United States"
+            
+            // Map the full country name to its 2-letter code (the 'flag' value)
+            const flagCode = COUNTRY_CODES[countryName] || 'ZZ'; // e.g., "US"
 
             submitBtn.disabled = true;
             logMessage('ATTEMPTING HANDSHAKE... Validating payload.', 'info');
 
-            const payload = { name, country };
+            // --- UPDATED Payload: sending name, full country name, and 2-letter flag code ---
+            const payload = { 
+                name, 
+                country: countryName, 
+                flag: flagCode // The new field expected by the server
+            }; 
 
             try {
                 const response = await fetch(`${API_BASE_URL}/api/request/new`, {
@@ -300,6 +325,7 @@
 
                     logMessage(`PULSE ACCEPTED: ${result.message}
 > YOUR POSITION: ${queuePosition} in queue
+> ORIGIN CODE: ${flagCode}
 > EST. WAIT TIME: ${formattedWaitTime} (${TIME_PER_REQUEST_SEC}s/request)`, 'success');
 
                 } else if (response.status === 429) {

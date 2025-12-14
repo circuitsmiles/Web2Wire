@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Embedded Flag Array Generator</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['Courier New', 'monospace'],
+                    },
+                    colors: {
+                        'primary': '#00bfa5', // Teal/Cyan for main actions
+                        'background': '#1f2937', // Dark Slate
+                        'card': '#374151', // Slightly lighter slate
+                        'text-light': '#f3f4f6',
+                        'text-mono': '#86efac', // Neon Green for code
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.text-light');
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Inter', sans-serif;
+        }
+        /* Style for the C array output area */
+        #outputCode {
+            font-family: 'Courier New', monospace;
+            color: theme('colors.text-mono');
+            background-color: #111827; /* Darkest black */
+            border: 1px solid theme('colors.primary');
+            box-shadow: 0 0 10px rgba(0, 191, 165, 0.3);
+            resize: vertical;
+        }
+    </style>
+</head>
+<body class="p-4">
+
+    <!-- Hidden Canvas for Image Processing -->
+    <canvas id="hiddenCanvas" width="32" height="20" class="hidden"></canvas>
+
+    <div class="w-full max-w-4xl bg-card p-6 md:p-10 rounded-xl shadow-2xl space-y-6">
+        <h1 class="text-3xl font-bold text-center text-primary border-b pb-4 border-gray-600">
+            Embedded Flag RGB565 Array Generator
+        </h1>
+        <p class="text-center text-sm text-gray-400">
+            Select an image. It will be resized to 32x20 pixels and converted to a 16-bit RGB565 C array for PROGMEM.
+        </p>
+
+        <!-- Input Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- File Input -->
+            <div class="col-span-1 md:col-span-1">
+                <label for="imageFile" class="block text-sm font-medium text-text-light mb-1">1. Select Image (PNG/JPG/WEBP)</label>
+                <input type="file" id="imageFile" accept="image/png, image/jpeg, image/webp" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-primary hover:file:bg-gray-600 rounded-lg p-2 bg-gray-600">
+            </div>
+
+            <!-- Array Name Input -->
+            <div class="col-span-1 md:col-span-1">
+                <label for="arrayName" class="block text-sm font-medium text-text-light mb-1">2. Array Variable Name</label>
+                <input type="text" id="arrayName" value="FLAG_NEW_DATA" placeholder="e.g., FLAG_US_DATA" class="w-full p-2.5 bg-gray-700 border border-gray-600 rounded-lg text-text-light focus:ring-primary focus:border-primary">
+            </div>
+
+            <!-- Generate Button -->
+            <div class="col-span-1 md:col-span-1 flex items-end">
+                <button id="generateBtn" onclick="generateArray()" class="w-full bg-primary text-gray-900 py-2.5 px-4 rounded-lg font-bold shadow-lg hover:bg-teal-400 transition duration-150 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                    3. Generate C Array
+                </button>
+            </div>
+        </div>
+
+        <!-- Output Area -->
+        <div class="mt-8">
+            <h2 class="text-xl font-semibold mb-2 text-primary">Generated C Array (32x20, 16-bit RGB565)</h2>
+            <textarea id="outputCode" rows="15" readonly placeholder="Upload an image and click Generate to see the C array code..." class="w-full p-4 rounded-lg text-sm"></textarea>
+            <button onclick="copyToClipboard()" id="copyBtn" class="mt-3 bg-gray-600 text-text-light py-2 px-4 rounded-lg text-sm hover:bg-gray-500 transition duration-150">Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <script>
+        const TARGET_WIDTH = 32;
+        const TARGET_HEIGHT = 20;
+        const OUTPUT_COLUMNS = 12;
+
+        /**
+         * @brief Converts 24-bit RGB (R, G, B) to 16-bit RGB565.
+         * The core logic ported directly from the Python script.
+         */
+        function rgb888ToRgb565(r, g, b) {
+            // R: 8-bit to 5-bit (R >> 3)
+            const r_5 = r >> 3;
+            // G: 8-bit to 6-bit (G >> 2)
+            const g_6 = g >> 2;
+            // B: 8-bit to 5-bit (B >> 3)
+            const b_5 = b >> 3;
+            
+            // Combine (RXXXXX GGGGGG BXXXXX)
+            // The 16-bit integer is assembled: (R 5 bits) | (G 6 bits) | (B 5 bits)
+            return (r_5 << 11) | (g_6 << 5) | b_5;
+        }
+
+        /**
+         * @brief Main function to process the image and generate the array.
+         */
+        function generateArray() {
+            const fileInput = document.getElementById('imageFile');
+            const arrayNameInput = document.getElementById('arrayName');
+            const outputCode = document.getElementById('outputCode');
+            const file = fileInput.files[0];
+            const arrayName = arrayNameInput.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''); // Sanitize name
+            
+            if (!file) {
+                outputCode.value = "// Error: Please select an image file first.";
+                return;
+            }
+            if (!arrayName) {
+                 outputCode.value = "// Error: Array name cannot be empty.";
+                 return;
+            }
+
+            outputCode.value = "// Processing image, please wait...";
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.getElementById('hiddenCanvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // 1. Draw and resize the image onto the hidden canvas
+                    ctx.drawImage(img, 0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+
+                    // 2. Get the pixel data array (R, G, B, A format)
+                    const imageData = ctx.getImageData(0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+                    const pixels = imageData.data;
+                    
+                    let rgb565_values = [];
+                    
+                    // 3. Loop through the pixels (stepping by 4: R, G, B, A)
+                    for (let i = 0; i < pixels.length; i += 4) {
+                        const r = pixels[i];
+                        const g = pixels[i + 1];
+                        const b = pixels[i + 2];
+                        // Alpha (A) is ignored in RGB565
+                        
+                        const rgb565 = rgb888ToRgb565(r, g, b);
+                        
+                        // Convert to hex string and pad with leading zeros
+                        rgb565_values.push(`0x${rgb565.toString(16).toUpperCase().padStart(4, '0')}`);
+                    }
+
+                    // 4. Format the final C array content
+                    let formattedLines = [];
+                    for (let i = 0; i < rgb565_values.length; i += OUTPUT_COLUMNS) {
+                        const line = rgb565_values.slice(i, i + OUTPUT_COLUMNS).join(", ");
+                        formattedLines.push(`    ${line}`);
+                    }
+
+                    const arraySize = TARGET_WIDTH * TARGET_HEIGHT;
+                    const c_array_content = 
+                        `// Generated from ${file.name}\n` +
+                        `// Dimensions: ${TARGET_WIDTH}x${TARGET_HEIGHT} pixels\n` +
+                        `// Total size: ${arraySize} words (approx. ${arraySize * 2} bytes)\n` +
+                        `const uint16_t ${arrayName}[${arraySize}] PROGMEM = {\n` +
+                        formattedLines.join(",\n") +
+                        `\n};`;
+                    
+                    outputCode.value = c_array_content;
+
+                    console.log(`Successfully generated array for ${arrayName}. Size: ${arraySize}`);
+
+                };
+                img.onerror = function() {
+                    outputCode.value = "// Error: Could not load the image file. Ensure it is a valid format (PNG/JPG/WEBP).";
+                };
+                img.src = event.target.result; // Set image source from file reader
+            };
+            
+            reader.onerror = function() {
+                outputCode.value = "// Error reading file.";
+            };
+
+            reader.readAsDataURL(file); // Start reading the file
+        }
+
+        /**
+         * @brief Copies the output text to the clipboard.
+         */
+        function copyToClipboard() {
+            const outputCode = document.getElementById('outputCode');
+            outputCode.select();
+            outputCode.setSelectionRange(0, 99999); // For mobile devices
+            try {
+                document.execCommand('copy');
+                document.getElementById('copyBtn').textContent = "Copied!";
+                setTimeout(() => {
+                    document.getElementById('copyBtn').textContent = "Copy to Clipboard";
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+        }
+    </script>
+</body>
+</html>
