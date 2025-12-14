@@ -8,7 +8,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
 #include <SPI.h>        // Required for explicit SPI bus setup
-#include "flag_data.h" // <<< Include for shared flag data
 #include "flag_drawing.h" // <<< NEW: Include for all flag drawing logic
 
 // --- DISPLAY PINS (Adjusted for user's wiring) ---

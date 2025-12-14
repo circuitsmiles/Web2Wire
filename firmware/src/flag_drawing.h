@@ -4,7 +4,11 @@
 #include <Arduino.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
-#include "flag_data.h" // For FLAG_W, FLAG_H, NUM_FLAGS, FLAG_LOOKUP, etc.
+
+// --- FLAG DIMENSIONS (MUST match the bitmaps) ---
+#define FLAG_W 32
+#define FLAG_H 20
+#define FLAG_SIZE (FLAG_W * FLAG_H) // 640 words
 
 // The TFT display object is defined in the main sketch, so we declare it as extern here
 // to allow the drawing functions to access it.

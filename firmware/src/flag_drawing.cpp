@@ -849,54 +849,65 @@ void drawFlag(const String &flagCode, int x, int y, int scale)
          if (code.equals("SE")) { drawSEFlag(x, y, scale); return; }
          if (code.equals("CH")) { drawCHFlag(x, y, scale); return; }
          if (code.equals("TR")) { drawTRFlag(x, y, scale); return; }
+         else {
+            int scaledW = FLAG_W * scale;
+            int scaledH = FLAG_H * scale;
+            tft.drawRect(x, y, scaledW, scaledH, ST77XX_RED);
+            tft.fillRect(x + 1, y + 1, scaledW - 2, scaledH - 2, ST77XX_BLACK);
+            tft.setCursor(x + 5, y + (scaledH / 2) - 5);
+            tft.setTextSize(1);
+            tft.setTextColor(ST77XX_RED);
+            tft.print(code.c_str());
+            return;
+         }
 
-    // --- FALLBACK TO BITMAP LOOKUP FOR ALL OTHER FLAGS ---
-    const uint16_t *bitmapData = nullptr;
+    // // --- FALLBACK TO BITMAP LOOKUP FOR ALL OTHER FLAGS ---
+    // const uint16_t *bitmapData = nullptr;
 
-    for (int i = 0; i < NUM_FLAGS; i++)
-    {
-        // Check against the array of bitmap data codes defined in flag_data.h
-        if (code.equals(FLAG_LOOKUP[i].code))
-        {
-            bitmapData = FLAG_LOOKUP[i].bitmap;
-            break;
-        }
-    }
+    // for (int i = 0; i < NUM_FLAGS; i++)
+    // {
+    //     // Check against the array of bitmap data codes defined in flag_data.h
+    //     if (code.equals(FLAG_LOOKUP[i].code))
+    //     {
+    //         bitmapData = FLAG_LOOKUP[i].bitmap;
+    //         break;
+    //     }
+    // }
 
-    int scaledW = FLAG_W * scale;
-    int scaledH = FLAG_H * scale;
+    // int scaledW = FLAG_W * scale;
+    // int scaledH = FLAG_H * scale;
 
-    // Fallback: If code is not found, draw a simple 'Unknown' pattern
-    if (bitmapData == nullptr)
-    {
-        tft.drawRect(x, y, scaledW, scaledH, ST77XX_RED);
-        tft.fillRect(x + 1, y + 1, scaledW - 2, scaledH - 2, ST77XX_BLACK);
-        tft.setCursor(x + 5, y + (scaledH / 2) - 5);
-        tft.setTextSize(1);
-        tft.setTextColor(ST77XX_RED);
-        tft.print(code.c_str());
-        return;
-    }
+    // // Fallback: If code is not found, draw a simple 'Unknown' pattern
+    // if (bitmapData == nullptr)
+    // {
+    //     tft.drawRect(x, y, scaledW, scaledH, ST77XX_RED);
+    //     tft.fillRect(x + 1, y + 1, scaledW - 2, scaledH - 2, ST77XX_BLACK);
+    //     tft.setCursor(x + 5, y + (scaledH / 2) - 5);
+    //     tft.setTextSize(1);
+    //     tft.setTextColor(ST77XX_RED);
+    //     tft.print(code.c_str());
+    //     return;
+    // }
 
-    // 2. Draw the bitmap using fast pixel writing with scaling
-    tft.startWrite();
-    // Set the address window for the entire scaled flag area
-    tft.setAddrWindow(x, y, x + scaledW - 1, y + scaledH - 1);
+    // // 2. Draw the bitmap using fast pixel writing with scaling
+    // tft.startWrite();
+    // // Set the address window for the entire scaled flag area
+    // tft.setAddrWindow(x, y, x + scaledW - 1, y + scaledH - 1);
 
-    for (int row = 0; row < FLAG_H; row++)
-    {
-        for (int r = 0; r < scale; r++)
-        { // Row scaling loop: Repeat row 'scale' times
-            for (int col = 0; col < FLAG_W; col++)
-            {
-                // Read 16-bit color from PROGMEM (Flash memory)
-                uint16_t color = pgm_read_word(&bitmapData[row * FLAG_W + col]);
+    // for (int row = 0; row < FLAG_H; row++)
+    // {
+    //     for (int r = 0; r < scale; r++)
+    //     { // Row scaling loop: Repeat row 'scale' times
+    //         for (int col = 0; col < FLAG_W; col++)
+    //         {
+    //             // Read 16-bit color from PROGMEM (Flash memory)
+    //             uint16_t color = pgm_read_word(&bitmapData[row * FLAG_W + col]);
 
-                // Column scaling loop: Write the color 'scale' times
-                tft.writeColor(color, scale);
-            }
-        }
-    }
-    tft.endWrite();
-    tft.setAddrWindow(0, 0, tft.width() - 1, tft.height() - 1); // Reset window
+    //             // Column scaling loop: Write the color 'scale' times
+    //             tft.writeColor(color, scale);
+    //         }
+    //     }
+    // }
+    // tft.endWrite();
+    // tft.setAddrWindow(0, 0, tft.width() - 1, tft.height() - 1); // Reset window
 }
