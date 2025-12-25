@@ -74,3 +74,5 @@ python control\_api.py
 ### **6\. Test the Frontend**
 
 Open the /frontend/index.html file in your web browser. Since the API endpoints are configured to hit api.myproject.local, your browser will use the hosts file entry and direct requests to your running Control API on the NUC.
+
+## [**Deployment Guide**](DEPLOYMENT.md)
