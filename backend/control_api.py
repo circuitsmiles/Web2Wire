@@ -15,8 +15,14 @@ ESP32_IP = "192.168.2.13"
 ESP32_PORT = 80
 ESP32_JOB_START_URL = f"http://{ESP32_IP}:{ESP32_PORT}/api/job/start"
 
+# CRITICAL SECURITY FIX: We only allow the ESP32's specific LAN IP.
+ALLOWED_JOB_COMPLETE_IPS = [
+    ESP32_IP,       
+]
+
 # Redis Configuration
-REDIS_HOST = 'localhost'
+# Note: Since the control API runs locally, localhost is correct.
+REDIS_HOST = '127.0.0.1' 
 REDIS_PORT = 6379
 # Keys used in Redis for state persistence
 REDIS_QUEUE_KEY = 'web2wire:job_queue'
@@ -39,15 +45,17 @@ state_lock = threading.Lock()
 limiter = Limiter(
     key_func=get_remote_address, 
     default_limits=["50 per minute", "1000 per hour"], 
-    storage_uri="redis://localhost:6379" 
+    # Use 127.0.0.1 for local Redis storage
+    storage_uri="redis://127.0.0.1:6379" 
 )
 limiter.init_app(app) 
 
 # Initialize Redis connection
 try:
-    r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    # Ensure Redis is explicitly pointing to the local loopback address for consistency
+    r = redis.Redis(host='127.0.0.1', port=REDIS_PORT, decode_responses=True)
     r.ping()
-    print(f"[INIT] Successfully connected to Redis at {REDIS_HOST}:{REDIS_PORT}.")
+    print(f"[INIT] Successfully connected to Redis at 127.0.0.1:{REDIS_PORT}.")
     
     # Initialize the device state if it doesn't exist
     if not r.get(REDIS_STATE_KEY):
@@ -56,7 +64,7 @@ try:
 
 except redis.exceptions.ConnectionError as e:
     print(f"[FATAL] Could not connect to Redis: {e}")
-    print("[FATAL] Please ensure Redis server is running.")
+    print("[FATAL] Please ensure Redis server is running on 127.0.0.1:6379.")
     r = None # Set r to None to fail subsequent Redis operations
 
 # --- REDIS HELPER FUNCTIONS ---
@@ -144,6 +152,10 @@ def _processor_loop():
         device_state = _get_device_state()
         queue_size = _get_queue_size()
         
+        # --- DEBUGGING PRINT STATEMENT ADDED HERE ---
+        print(f"[DEBUG_LOOP] State: {device_state}, Queue Size: {queue_size}")
+        # ---------------------------------------------
+        
         # Only attempt to process if the device is IDLE and the queue is not empty
         if device_state == STATUS_IDLE and queue_size > 0:
             
@@ -157,7 +169,7 @@ def _processor_loop():
                 job_thread = threading.Thread(target=_send_job_to_esp32, args=(next_job,))
                 job_thread.start()
             
-        time.sleep(1) # Check queue every second
+        time.sleep(5) # Increased sleep for less log spam while debugging
 
 # Start the background processor thread when the server starts
 processor_thread = threading.Thread(target=_processor_loop, daemon=True)
@@ -235,7 +247,15 @@ def new_request():
 def job_complete():
     """
     [STEP 4] Endpoint called by the ESP32 after it has finished the action.
+    This endpoint is STRICTLY restricted to only be accessible from the ESP32's LAN IP.
     """
+    # 1. IP Restriction Check
+    remote_ip = request.remote_addr
+    if remote_ip not in ALLOWED_JOB_COMPLETE_IPS:
+        print(f"[SECURITY] Access denied to /api/job/complete from unauthorized IP: {remote_ip}")
+        # Note: We return 403 Forbidden to unauthorized IPs
+        return jsonify({"message": f"Access denied from {remote_ip}. Only the ESP32 ({ESP32_IP}) is authorized."}), 403
+
     data = request.json
     
     if data and data.get('status') == 'completed':
