@@ -46,7 +46,7 @@ const long RECONNECT_COOLDOWN_MS = 10000;
 unsigned long lastReconnectAttempt = 0;
 
 // --- API ENDPOINTS (Unchanged) ---
-const char *COMPLETION_URL = "http://192.168.2.10:5000/api/job/complete";
+const char *COMPLETION_URL = "https://api.circuitsmiles.dev/api/job/complete";
 
 // --- GLOBAL OBJECTS (Unchanged) ---
 WebServer server(HTTP_PORT);
