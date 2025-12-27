@@ -67,15 +67,7 @@
             box-shadow: none;
         }
         
-        /* Style for the dropdown arrow to match the theme */
-        select.neon-input {
-            appearance: none; /* Removes default dropdown arrow */
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill='%2339FF14' d='M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 0.7em top 50%;
-            background-size: 1.5em;
-            padding-right: 2.5em; /* Make space for the custom arrow */
-        }
+        /* Removed select.neon-input custom styling as we are using a custom component */
 
         /* Specific style for the small refresh button */
         #refresh-btn {
@@ -90,6 +82,17 @@
         }
 
         #refresh-btn:hover:not(:disabled) {
+            background-color: rgba(57, 255, 20, 0.2);
+        }
+
+        /* Custom Dropdown List Item Styling */
+        .country-option {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            transition: background-color 0.1s;
+        }
+
+        .country-option:hover {
             background-color: rgba(57, 255, 20, 0.2);
         }
     </style>
@@ -129,52 +132,25 @@
             <div>
                 <label for="user-name" class="block text-sm font-medium mb-1 neon-text">USER ID (Name):</label>
                 <input type="text" id="user-name" required placeholder="Enter your callsign (max 20 chars)" maxlength="20"
-                       class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
+                        class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
             </div>
 
-            <div>
-                <label for="user-country" class="block text-sm font-medium mb-1 neon-text">ORIGIN (Country):</label>
-                <select id="user-country" required 
-                        class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500">
-                    <option value="" disabled selected>Select your source nation</option>
-                    <option value="Argentina">Argentina</option>
-                    <option value="Australia">Australia</option>
-                    <option value="Austria">Austria</option>
-                    <option value="Belgium">Belgium</option>
-                    <option value="Brazil">Brazil</option>
-                    <option value="Canada">Canada</option>
-                    <option value="Chile">Chile</option>
-                    <option value="China">China</option>
-                    <option value="Colombia">Colombia</option>
-                    <option value="Denmark">Denmark</option>
-                    <option value="Egypt">Egypt</option>
-                    <option value="Finland">Finland</option>
-                    <option value="France">France</option>
-                    <option value="Germany">Germany</option>
-                    <option value="Greece">Greece</option>
-                    <option value="India">India</option>
-                    <option value="Indonesia">Indonesia</option>
-                    <option value="Ireland">Ireland</option>
-                    <option value="Italy">Italy</option>
-                    <option value="Japan">Japan</option>
-                    <option value="Kenya">Kenya</option>
-                    <option value="Mexico">Mexico</option>
-                    <option value="Netherlands">Netherlands</option>
-                    <option value="New Zealand">New Zealand</option>
-                    <option value="Norway">Norway</option>
-                    <option value="Poland">Poland</option>
-                    <option value="Portugal">Portugal</option>
-                    <option value="South Africa">South Africa</option>
-                    <option value="South Korea">South Korea</option>
-                    <option value="Spain">Spain</option>
-                    <option value="Sweden">Sweden</option>
-                    <option value="Switzerland">Switzerland</option>
-                    <option value="Turkey">Turkey</option>
-                    <option value="United Kingdom">United Kingdom</option>
-                    <option value="United States">United States</option>
-                    <option value="Other">Other / Unknown</option>
-                </select>
+            <!-- --- FIX: Custom Dropdown for Country Selection --- -->
+            <div class="relative">
+                <label for="country-input" class="block text-sm font-medium mb-1 neon-text">ORIGIN (Country):</label>
+                <input type="text" id="country-input" required placeholder="Select or type your source nation" readonly 
+                        class="w-full p-3 rounded neon-input focus:outline-none focus:ring-2 focus:ring-green-500 cursor-pointer">
+                
+                <!-- Hidden input to store the final selected value (optional, but good practice) -->
+                <input type="hidden" id="user-country" required>
+
+                <!-- Dropdown List Container -->
+                <div id="country-dropdown" class="absolute z-10 w-full mt-1 bg-gray-900/95 neon-box rounded-md shadow-lg 
+                                                 max-h-64 overflow-y-auto hidden">
+                    <!-- Options will be populated here by JavaScript -->
+                </div>
             </div>
+            <!-- --- END FIX --- -->
 
             <button type="submit" id="submit-btn" class="w-full p-3 rounded neon-btn mt-4 shadow-lg shadow-green-500/30">
                 INITIATE PULSE SEQUENCE <span class="ml-2">→</span>
@@ -198,58 +174,32 @@
         const messageDiv = document.getElementById('message');
         const queueStatusSpan = document.getElementById('queue-status');
         const refreshBtn = document.getElementById('refresh-btn');
-        const waitTimeDisplay = document.getElementById('wait-time-display'); // New element
+        const waitTimeDisplay = document.getElementById('wait-time-display'); 
+        const countryInput = document.getElementById('country-input'); // Custom input field
+        const userCountryHidden = document.getElementById('user-country'); // Hidden field for form value
+        const countryDropdown = document.getElementById('country-dropdown'); // Custom dropdown list
         const neonGreenColor = 'var(--neon-green)';
 
         // --- GLOBAL STATE for Ticking Timer ---
         let countdownInterval = null;
-        let secondsRemaining = 0; // Tracks the current countdown
+        let secondsRemaining = 0; 
         
         // --- COUNTRY CODE MAPPING ---
-        // Maps the full country name (the value in the <option>) to the 2-letter code (the 'flag' field)
         const COUNTRY_CODES = {
-            "Argentina": "AR",
-            "Australia": "AU",
-            "Austria": "AT",
-            "Belgium": "BE",
-            "Brazil": "BR",
-            "Canada": "CA",
-            "Chile": "CL",
-            "China": "CN",
-            "Colombia": "CO",
-            "Denmark": "DK",
-            "Egypt": "EG",
-            "Finland": "FI",
-            "France": "FR",
-            "Germany": "DE",
-            "Greece": "GR",
-            "India": "IN",
-            "Indonesia": "ID",
-            "Ireland": "IE",
-            "Italy": "IT",
-            "Japan": "JP",
-            "Kenya": "KE",
-            "Mexico": "MX",
-            "Netherlands": "NL",
-            "New Zealand": "NZ",
-            "Norway": "NO",
-            "Poland": "PL",
-            "Portugal": "PT",
-            "South Africa": "ZA",
-            "South Korea": "KR",
-            "Spain": "ES",
-            "Sweden": "SE",
-            "Switzerland": "CH",
-            "Turkey": "TR",
-            "United Kingdom": "GB",
-            "United States": "US",
-            "Other": "ZZ"
+            "Argentina": "AR", "Australia": "AU", "Austria": "AT", "Belgium": "BE", "Brazil": "BR", "Canada": "CA", 
+            "Chile": "CL", "China": "CN", "Colombia": "CO", "Denmark": "DK", "Egypt": "EG", "Finland": "FI", 
+            "France": "FR", "Germany": "DE", "Greece": "GR", "India": "IN", "Indonesia": "ID", "Ireland": "IE", 
+            "Italy": "IT", "Japan": "JP", "Kenya": "KE", "Mexico": "MX", "Netherlands": "NL", "New Zealand": "NZ", 
+            "Norway": "NO", "Poland": "PL", "Portugal": "PT", "South Africa": "ZA", "South Korea": "KR", 
+            "Spain": "ES", "Sweden": "SE", "Switzerland": "CH", "Turkey": "TR", "United Kingdom": "GB", 
+            "United States": "US", "Other": "ZZ"
         };
+        const COUNTRY_NAMES = Object.keys(COUNTRY_CODES);
 
 
         // --- UTILITY: Format wait time in seconds to minutes and seconds ---
         function formatWaitTime(seconds) {
-            seconds = Math.max(0, seconds); // Ensure time is not negative
+            seconds = Math.max(0, seconds); 
             if (seconds <= 0) return "Less than 5 seconds";
             const minutes = Math.floor(seconds / 60);
             const remainingSeconds = seconds % 60;
@@ -292,12 +242,10 @@
         
         // --- COUNTDOWN LOGIC ---
         function startWaitTimeCountdown(initialQueueSize) {
-            // Stop any existing timer
             if (countdownInterval) {
                 clearInterval(countdownInterval);
             }
 
-            // Calculate initial total seconds to wait
             secondsRemaining = initialQueueSize * TIME_PER_REQUEST_SEC;
 
             if (secondsRemaining <= 0) {
@@ -305,11 +253,9 @@
                 return;
             }
 
-            // Initial display update
             const initialFormattedTime = formatWaitTime(secondsRemaining);
             waitTimeDisplay.textContent = `${initialFormattedTime} (${TIME_PER_REQUEST_SEC}s/req)`;
 
-            // Start the 1-second countdown
             countdownInterval = setInterval(() => {
                 secondsRemaining = Math.max(0, secondsRemaining - 1);
                 
@@ -323,30 +269,120 @@
                     // Wait a moment and fetch the new status to reset the size
                     setTimeout(() => fetchQueueStatus(false), 2000); 
                 }
-            }, 1000); // Ticks every 1000 milliseconds (1 second)
+            }, 1000); 
         }
+
+        // --- CUSTOM DROPDOWN LOGIC ---
+
+        // Function to select a country from the list
+        function selectCountry(countryName) {
+            countryInput.value = countryName;
+            userCountryHidden.value = countryName;
+            countryDropdown.classList.add('hidden');
+            // Re-enable readonly after selection
+            countryInput.readOnly = true; 
+        }
+
+        // Function to render the list of countries (filtered by search term)
+        function renderCountryOptions(filter = '') {
+            countryDropdown.innerHTML = ''; // Clear previous options
+            const lowerFilter = filter.toLowerCase();
+
+            const filteredCountries = COUNTRY_NAMES.filter(name => 
+                name.toLowerCase().includes(lowerFilter)
+            );
+
+            if (filteredCountries.length === 0) {
+                const noResult = document.createElement('div');
+                noResult.className = 'country-option text-gray-500 cursor-default';
+                noResult.textContent = `No results for "${filter}"`;
+                countryDropdown.appendChild(noResult);
+                return;
+            }
+
+            filteredCountries.forEach(countryName => {
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'country-option hover:text-black'; // hover:text-black makes the hover look nice on neon-btn background
+                optionDiv.textContent = countryName;
+                optionDiv.addEventListener('mousedown', (e) => {
+                    // Use mousedown instead of click to prevent the input field's blur event
+                    // from hiding the dropdown before the click event registers.
+                    e.preventDefault(); 
+                    selectCountry(countryName);
+                });
+                countryDropdown.appendChild(optionDiv);
+            });
+        }
+
+        // Event listener to show/hide the dropdown
+        countryInput.addEventListener('click', () => {
+             // If clicked, make input editable for filtering and show the list
+            countryInput.readOnly = false;
+            countryInput.focus();
+            countryDropdown.classList.remove('hidden');
+            renderCountryOptions(countryInput.value); // Re-render with current value
+        });
+
+        // Event listener for filtering as user types
+        countryInput.addEventListener('input', () => {
+            userCountryHidden.value = ''; // Clear hidden value while typing
+            renderCountryOptions(countryInput.value);
+            countryDropdown.classList.remove('hidden'); // Ensure it stays visible
+        });
+        
+        // Hide dropdown when focus is lost (except for the list itself)
+        countryInput.addEventListener('blur', () => {
+            // Delay to allow the mousedown event on an option to register
+            setTimeout(() => {
+                if (!countryDropdown.contains(document.activeElement)) {
+                    countryDropdown.classList.add('hidden');
+                    // If blur happens and no country was selected, reset the input to the last known valid value or empty
+                    if (!userCountryHidden.value && countryInput.value) {
+                         // Check if the typed value matches a country name
+                         if (COUNTRY_NAMES.includes(countryInput.value)) {
+                            userCountryHidden.value = countryInput.value;
+                         } else {
+                            countryInput.value = ''; // Clear if it's not a valid country
+                         }
+                    } else if (userCountryHidden.value) {
+                         // Restore the last selected valid country name to the visible input
+                         countryInput.value = userCountryHidden.value;
+                    }
+                    countryInput.readOnly = true; // Make it read-only again after interaction
+                }
+            }, 100);
+        });
 
         // --- 1. HANDLE FORM SUBMISSION ---
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            // --- GET VALUE FROM THE HIDDEN INPUT ---
+            const countryName = userCountryHidden.value; 
+
+            if (!countryName) {
+                logMessage('ERROR: Please select a valid country.', 'error');
+                countryInput.focus();
+                countryDropdown.classList.remove('hidden');
+                return;
+            }
+
             const name = document.getElementById('user-name').value;
-            const countryName = document.getElementById('user-country').value; // e.g., "United States"
             
             // Map the full country name to its 2-letter code (the 'flag' value)
-            const flagCode = COUNTRY_CODES[countryName] || 'ZZ'; // e.g., "US"
+            const flagCode = COUNTRY_CODES[countryName] || 'ZZ'; 
 
             submitBtn.disabled = true;
             logMessage('ATTEMPTING HANDSHAKE... Validating payload.', 'info');
 
-            // --- UPDATED Payload: sending name, full country name, and 2-letter flag code ---
             const payload = { 
                 name, 
                 country: countryName, 
-                flag: flagCode // The new field expected by the server
+                flag: flagCode 
             }; 
 
             try {
+                // Simplified fetch retry logic (exponential backoff not fully implemented here due to complexity constraints)
                 const response = await fetch(`${API_BASE_URL}/api/request/new`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -356,12 +392,10 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    // API returns the NEW queue size, which is the user's position (1-indexed)
                     const queuePosition = result.queue_size; 
                     const waitTimeSeconds = queuePosition * TIME_PER_REQUEST_SEC;
                     const formattedWaitTime = formatWaitTime(waitTimeSeconds);
                     
-                    // Start the countdown immediately with the new size
                     startWaitTimeCountdown(queuePosition);
 
                     logMessage(`PULSE ACCEPTED: ${result.message}
@@ -380,7 +414,7 @@
                 console.error("Network Error:", error);
             } finally {
                 submitBtn.disabled = false;
-                fetchQueueStatus(false); // Update status after submission, don't log a refresh message
+                fetchQueueStatus(false); 
             }
         });
 
@@ -400,15 +434,12 @@
                     
                     const queuePosition = result.queue_size;
                     
-                    // Update the countdown whenever the queue status is successfully fetched
                     startWaitTimeCountdown(queuePosition);
 
-                    // Update Queue Size Span
                     queueStatusSpan.textContent = queuePosition;
                     queueStatusSpan.classList.remove('text-red-500', 'text-yellow-500');
                     queueStatusSpan.classList.add('neon-text');
                     
-                    // Log success for manual refresh with wait time
                     if (log) { 
                         const formattedWaitTime = formatWaitTime(queuePosition * TIME_PER_REQUEST_SEC);
                         logMessage(`Queue status updated successfully.
@@ -438,6 +469,9 @@
 
         // --- 4. INITIALIZE & POLLING ---
         document.addEventListener('DOMContentLoaded', () => {
+            // Initial render of all country options
+            renderCountryOptions();
+
             // Initial fetch on load (don't log it as a 'refresh')
             fetchQueueStatus(false); 
             
