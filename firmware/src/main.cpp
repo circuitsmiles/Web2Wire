@@ -46,7 +46,7 @@ const long RECONNECT_COOLDOWN_MS = 10000;
 unsigned long lastReconnectAttempt = 0;
 
 // --- API ENDPOINTS (Unchanged) ---
-const char* ESP32_API_SECRET = "add auth key here";
+const char* ESP32_API_SECRET = "add_auth_key_here";
 const char *COMPLETION_URL = "https://api.circuitsmiles.dev/api/job/complete";
 
 // --- GLOBAL OBJECTS (Unchanged) ---
@@ -129,10 +129,69 @@ void setupTFT()
     tft.println("-------------------------");
 }
 
-/**
- * @brief Displays the job data (name, country, and a flag representation).
- * @param data The JobData struct containing the information.
- */
+// Helper function to draw text, wrapping it to the next line if it exceeds max length.
+// Returns the final Y position after printing.
+int wrapAndPrintText(const String& text, int x, int y, int maxCharsPerLine, int lineHeight, uint16_t color) {
+    tft.setTextColor(color);
+    tft.setTextSize(2);
+    
+    // Check if wrapping is needed
+    if (text.length() <= maxCharsPerLine) {
+        tft.setCursor(x, y);
+        tft.print(text);
+        return y + lineHeight; // Advance Y by one line height
+    }
+
+    // --- Word Wrapping Logic ---
+    String line1 = "";
+    int lastSpaceIndex = -1;
+    
+    // Iterate through the string, finding the best place to break before maxCharsPerLine
+    for (int i = 0; i < text.length(); i++) {
+        char currentChar = text.charAt(i);
+
+        // Track the position of the last space encountered
+        if (currentChar == ' ') {
+            lastSpaceIndex = i;
+        }
+
+        // Check if adding the next character would exceed the limit
+        if (i == maxCharsPerLine) {
+            
+            if (lastSpaceIndex != -1) {
+                // Break at the last full space found before the limit
+                line1 = text.substring(0, lastSpaceIndex);
+            } else {
+                // No space found (very long single word), force break at max length
+                line1 = text.substring(0, maxCharsPerLine);
+                lastSpaceIndex = maxCharsPerLine;
+            }
+            
+            // Print Line 1
+            tft.setCursor(x, y);
+            tft.print(line1);
+            y += lineHeight; // Advance Y to the next line
+            
+            // Calculate Line 2: start from after the break point (plus one for the space if broken by space)
+            int startOfLine2 = (lastSpaceIndex != -1 && text.charAt(lastSpaceIndex) == ' ') ? lastSpaceIndex + 1 : lastSpaceIndex;
+            String line2 = text.substring(startOfLine2);
+
+            // Print Line 2 (trimmed to fit, if necessary)
+            tft.setCursor(x, y);
+            // This handles names longer than 30 characters by just showing the start of the remainder
+            tft.print(line2.substring(0, maxCharsPerLine)); 
+            
+            return y + lineHeight; // Advance Y for the final position
+        }
+    }
+    
+    // Fallback: should not be reached if length check worked, but good practice
+    tft.setCursor(x, y);
+    tft.print(text);
+    return y + lineHeight;
+}
+
+
 void drawJobData(const JobData &data)
 {
     tft.fillScreen(ST77XX_BLACK);
@@ -140,6 +199,8 @@ void drawJobData(const JobData &data)
     // The screen is 320 pixels wide and 170 pixels tall (Rotation 1)
     int margin = 5;
     int lineH = 20;
+    // --- MODIFICATION: CHANGED FROM 15 TO 14 CHARACTERS ---
+    const int MAX_CHARS_PER_LINE = 14; 
 
     tft.fillScreen(ST77XX_BLACK);
     int halfWidth = tft.width() / 2; // 160 pixels
@@ -160,13 +221,12 @@ void drawJobData(const JobData &data)
     tft.setCursor(margin, yPos);
     tft.print("Name: ");
 
-    yPos += lineH;
-    tft.setTextSize(2);
-    tft.setCursor(margin, yPos);
-    tft.setTextColor(ST77XX_YELLOW);
-    tft.print(data.name.substring(0, 15)); // 15 chars fits 160 width
+    yPos += lineH; // Move to the line below "Name: "
 
-    yPos += lineH + 5;
+    // yPos is updated by the helper function to the final position after printing one or two lines
+    yPos = wrapAndPrintText(data.name, margin, yPos, MAX_CHARS_PER_LINE, lineH, ST77XX_YELLOW);
+
+    yPos += 5; // Extra spacing before the next section
     tft.setTextSize(2);
     tft.setCursor(margin, yPos);
     tft.setTextColor(ST77XX_WHITE);
@@ -176,9 +236,12 @@ void drawJobData(const JobData &data)
     tft.setTextSize(2);
     tft.setCursor(margin, yPos);
     tft.setTextColor(ST77XX_YELLOW);
-    tft.print(data.country.substring(0, 15));
+    
+    // Apply word wrapper for country/origin
+    yPos = wrapAndPrintText(data.country, margin, yPos, MAX_CHARS_PER_LINE, lineH, ST77XX_YELLOW);
 
-    yPos += lineH + 5;
+
+    yPos += 5; // Add a little space before CODE
     tft.setTextSize(1);
     tft.setCursor(margin, yPos);
     tft.setTextColor(ST77XX_RED);
@@ -186,7 +249,7 @@ void drawJobData(const JobData &data)
     tft.setTextColor(ST77XX_ORANGE);
     tft.print(data.flag);
 
-    // Flag Block (Right Side - 160 wide)
+    // Flag Block (Right Side - 160 wide) 
     // Draw the 32x20 flag scaled up by 4x (128x80 pixels total)
     int flagScale = 4;
     int flagW = FLAG_W * flagScale; // 128
@@ -207,11 +270,11 @@ void drawJobData(const JobData &data)
     // Display the current status dynamically
     if (currentActionState == ACTION_IDLE)
     {
-         tft.print("STATUS: READY. AWAITING TRANSMISSION.");
+        tft.print("STATUS: READY. AWAITING TRANSMISSION.");
     }
     else
     {
-         tft.print("STATUS: PROCESSING... LED BLINK x5");
+        tft.print("STATUS: PROCESSING... LED BLINK x5");
     }
 }
 
