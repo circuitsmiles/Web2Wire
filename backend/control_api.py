@@ -2,23 +2,32 @@ import threading
 import time
 import requests
 import json
+import os
+import sys
+import hmac
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-# Import the Redis client library
 import redis 
 
 # --- CONFIGURATION ---
-# Note: Update this IP address to the actual static IP of your ESP32 S3 device.
+
+# 🔑 API KEY SECURITY: Read from the Systemd Environment Variable
+# The key is securely passed in via the Systemd service file.
+SECRET_ENV_VAR = 'ESP32_JOB_COMPLETE_SECRET'
+ESP32_API_SECRET = os.environ.get(SECRET_ENV_VAR)
+
+if not ESP32_API_SECRET:
+    print(f"[FATAL] Environment variable '{SECRET_ENV_VAR}' is not set!")
+    print("[FATAL] Application cannot start without a secure secret key.")
+    sys.exit(1) # Terminate the application if the secret is missing
+
+# --- NETWORK CONFIGURATION (Still needed for communicating TO the ESP32) ---
+# Note: This IP address is for the server to initiate communication.
 ESP32_IP = "192.168.2.13" 
 ESP32_PORT = 80
 ESP32_JOB_START_URL = f"http://{ESP32_IP}:{ESP32_PORT}/api/job/start"
-
-# CRITICAL SECURITY FIX: We only allow the ESP32's specific LAN IP.
-ALLOWED_JOB_COMPLETE_IPS = [
-    ESP32_IP,       
-]
 
 # Redis Configuration
 # Note: Since the control API runs locally, localhost is correct.
@@ -152,10 +161,6 @@ def _processor_loop():
         device_state = _get_device_state()
         queue_size = _get_queue_size()
         
-        # --- DEBUGGING PRINT STATEMENT ADDED HERE ---
-        print(f"[DEBUG_LOOP] State: {device_state}, Queue Size: {queue_size}")
-        # ---------------------------------------------
-        
         # Only attempt to process if the device is IDLE and the queue is not empty
         if device_state == STATUS_IDLE and queue_size > 0:
             
@@ -242,24 +247,40 @@ def new_request():
         print(f"[ERROR] An unexpected server error occurred during request processing: {e}")
         return jsonify({"message": f"An unexpected server error occurred: {e}"}), 500
 
-# --- ESP32 CALLBACK ENDPOINT ---
+# --- ESP32 CALLBACK ENDPOINT (SECURED WITH API KEY) ---
 @app.route('/api/job/complete', methods=['POST'])
 def job_complete():
     """
     [STEP 4] Endpoint called by the ESP32 after it has finished the action.
-    This endpoint is STRICTLY restricted to only be accessible from the ESP32's LAN IP.
+    This endpoint is STRICTLY restricted by checking the 'Authorization: Bearer <Key>' header.
     """
-    # 1. IP Restriction Check
-    remote_ip = request.remote_addr
-    if remote_ip not in ALLOWED_JOB_COMPLETE_IPS:
-        print(f"[SECURITY] Access denied to /api/job/complete from unauthorized IP: {remote_ip}")
-        # Note: We return 403 Forbidden to unauthorized IPs
-        return jsonify({"message": f"Access denied from {remote_ip}. Only the ESP32 ({ESP32_IP}) is authorized."}), 403
+    
+    # 1. Authorization Header Check
+    auth_header = request.headers.get('Authorization')
+    
+    if not auth_header or not auth_header.startswith('Bearer '):
+        print("[SECURITY] Access denied. Missing or invalid Authorization header.")
+        return jsonify({"message": "Unauthorized. Missing or invalid Authorization header."}), 401
 
+    # Extract the submitted key (Bearer <key> -> <key>)
+    submitted_key = auth_header.split('Bearer ')[1]
+
+    # 2. Constant-Time Key Comparison (Prevents Timing Attacks)
+    # The stored key is from the secure environment variable (ESP32_API_SECRET).
+    try:
+        if not hmac.compare_digest(submitted_key.encode('utf-8'), ESP32_API_SECRET.encode('utf-8')):
+            print("[SECURITY] Access denied. Invalid API key submitted.")
+            return jsonify({"message": "Forbidden. Invalid API Key."}), 403
+    except Exception as e:
+        # Catch encoding errors or other issues during comparison
+        print(f"[SECURITY ERROR] Key comparison failed: {e}")
+        return jsonify({"message": "Internal security error."}), 500
+        
+    # --- Authentication Successful ---
     data = request.json
     
     if data and data.get('status') == 'completed':
-        print("[API] Job completion signal received from ESP32. Resetting state.")
+        print("[API] Job completion signal received from authorized ESP32. Resetting state.")
         
         # Safely reset device state to IDLE in Redis
         with state_lock:
