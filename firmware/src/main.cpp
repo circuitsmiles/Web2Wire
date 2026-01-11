@@ -46,6 +46,7 @@ const long RECONNECT_COOLDOWN_MS = 10000;
 unsigned long lastReconnectAttempt = 0;
 
 // --- API ENDPOINTS (Unchanged) ---
+const char* ESP32_API_SECRET = "add auth key here";
 const char *COMPLETION_URL = "https://api.circuitsmiles.dev/api/job/complete";
 
 // --- GLOBAL OBJECTS (Unchanged) ---
@@ -500,6 +501,11 @@ bool notifyServerOfCompletion()
     HTTPClient http;
     http.begin(COMPLETION_URL);
     http.addHeader("Content-Type", "application/json");
+
+    String authHeaderValue = "Bearer "; 
+    authHeaderValue += ESP32_API_SECRET; 
+
+    http.addHeader("Authorization", authHeaderValue);
 
     JsonDocument doc;
     doc["job_name"] = currentJobData.name;

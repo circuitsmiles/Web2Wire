@@ -64,9 +64,13 @@ This phase is executed as the low-power user (web2wire) to set up the necessary 
 | **web2wire** | deactivate | Deactivates the virtual environment. |
 | **web2wire** | exit | Return to the **Admin (home)** user terminal. |
 
-### **Phase 4: Application Persistence (systemd Services)**
+### **Phase 4: Application Persistence and Security (systemd Services)**
 
-We create three separate systemd service files to manage the Frontend, Control API, and Queue API, ensuring they run on the correct local ports and restart automatically.
+#### **Important Security Enhancement: Environment Variables**
+
+The critical /api/job/complete endpoint is secured by an API key (generated with secrets_generator.py). To prevent this secret key from being hardcoded in the Python source code (which exposes it in Git repositories and makes rotation difficult), we now pass the secret key to the application using a secure Systemd **Environment Variable**. Make sure to update the firmware to use that same key in request.
+
+The Python application must be modified to read the key using os.environ.get('ESP32_JOB_COMPLETE_SECRET').
 
 | User | Command | Explanation |
 | :---- | :---- | :---- |
@@ -103,6 +107,7 @@ After=network.target docker.service
 [Service]  
 User=web2wire  
 WorkingDirectory=/home/web2wire/Web2Wire/backend  
+Environment="ESP32_JOB_COMPLETE_SECRET=your_secret_key_here"
 ExecStart=/home/web2wire/Web2Wire/venv/bin/python3 control_api.py  
 Restart=always
 
